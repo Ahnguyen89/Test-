@@ -157,10 +157,28 @@ Ready-to-use prompt templates are in [`.ai/prompts/`](.ai/prompts/).
 ## 📋 Recommended Workflow
 
 ### Phase 1: Analysis & Design
-- [ ] Read and understand this starter template
-- [ ] Choose your business domain and use case
-- [ ] Document analysis in [`docs/analysis-and-design.md`](docs/analysis-and-design.md)
-- [ ] Design system architecture in [`docs/architecture.md`](docs/architecture.md)
+- [x] Business domain selected: **Food Ordering System**
+- [ ] Define project scope (MVP):
+  - Customer can browse restaurants/menus, create order, choose payment method, and track delivery status
+  - Restaurant can manage menu and confirm/reject orders
+  - Delivery process updates order status until completed
+- [ ] Define bounded contexts and services:
+  - `customer-service`, `restaurant-service`, `menu-service`, `order-service`, `payment-service`, `delivery-service`, `api-gateway`
+- [ ] Define core business workflow (happy path):
+  - Browse menu -> create order -> payment -> restaurant confirms -> delivery starts -> order completed
+- [ ] Define data ownership (database per service):
+  - Customer DB, Restaurant/Menu DB, Order DB, Payment DB, Delivery DB
+- [ ] Define inter-service communication:
+  - Synchronous REST through Gateway for client-facing APIs
+  - Internal service-to-service calls for order, payment, and delivery orchestration
+- [ ] Document analysis in [`docs/analysis-and-design.md`](docs/analysis-and-design.md):
+  - Problem statement, actors, use cases, constraints, non-functional requirements
+- [ ] Design system architecture in [`docs/architecture.md`](docs/architecture.md):
+  - Context diagram, container diagram, sequence diagram for "Place Order"
+- [ ] Team task breakdown for Phase 1 deliverables:
+  - **Member 1 (Customer + Order)**: User stories, use cases, and workflow for customer/order lifecycle
+  - **Member 2 (Restaurant + Menu)**: Domain model and business rules for restaurant/menu management
+  - **Member 3 (Payment + Delivery + Gateway)**: Integration flow, API routing strategy, and cross-service error handling design
 
 ### Phase 2: API Design
 - [ ] Define APIs using OpenAPI 3.0 in [`docs/api-specs/`](docs/api-specs/)
