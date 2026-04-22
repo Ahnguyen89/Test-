@@ -150,16 +150,19 @@ Group process-specific (non-agnostic) actions into a Task Service Candidate.
 
 | Hành động Đặc Thù | Task Service Candidate |
 |------------------|------------------------|
-| Đặt phòng (CreateBooking) — gọi schedule-service kiểm tra khả dụng → lưu vào booking | booking-service (Orchestrator) |
-| Gửi thông báo xác nhận | notification-service (Utility) |
+| Đặt phòng (CreateBooking) — gọi schedule-service kiểm tra khả dụng → giữ slot → lưu booking | booking-service (Orchestrator) |
+| Hủy đặt phòng (CancelBooking) — cập nhật booking → giải phóng slot | booking-service (Orchestrator) |
 
 > **Giải thích:**
 > - booking-service vừa là Entity Service (lưu đơn đặt phòng) vừa là Task Service (điều phối quy trình đặt phòng).
 > - Khi sinh viên CreateBooking:
 >   1. booking-service nhận yêu cầu
 >   2. Gọi schedule-service → CheckAvailability (slot có trống?)
->   3. Nếu trống → lưu Booking + cập nhật Schedule slot
->   4. Gọi notification-service gửi email xác nhận
+>   3. Nếu trống → yêu cầu schedule-service giữ slot
+>   4. Lưu Booking + cập nhật trạng thái
+>   5. Trả kết quả cho client
+>
+> **SOA note:** booking-service đóng vai trò **process service** (orchestration), còn room-service và schedule-service là **entity services**.
 
 ### 2.5 Identify Resources
 
@@ -190,23 +193,26 @@ Map entities/processes to REST URI Resources.
 |-------------------|----------|----------|-------------|
 | room-service | ListRooms | /rooms | GET |
 | room-service | GetRoomDetails | /rooms/{id} | GET |
+| room-service | CreateRoom | /rooms | POST |
 | room-service | UpdateRoom | /rooms/{id} | PUT |
 | room-service | DeleteRoom | /rooms/{id} | DELETE |
 | schedule-service | CreateScheduleSlot | /schedules | POST |
 | schedule-service | UpdateScheduleSlot | /schedules/{id} | PUT |
 | schedule-service | CheckAvailability | /schedules/check-availability | POST |
 | schedule-service | GetSchedulesByRoom | /rooms/{roomId}/schedules | GET |
+| schedule-service | ReserveSlot | /schedules/{id}/reserve | POST |
+| schedule-service | ReleaseSlot | /schedules/{id}/release | POST |
 | booking-service | CreateBooking | /bookings | POST |
 | booking-service | GetBooking | /bookings/{id} | GET |
 | booking-service | CancelBooking | /bookings/{id} | DELETE |
 | booking-service | ListUserBookings | /users/{userId}/bookings | GET |
-| notification-service | SendNotification | /notifications/send | POST |
 
 > **Ràng buộc:**
 > - POST dùng để tạo resource mới (CreateBooking, CreateScheduleSlot)
 > - GET dùng để truy vấn dữ liệu (ListRooms, GetBooking)
 > - PUT dùng để cập nhật resource hiện tại (UpdateRoom, UpdateScheduleSlot)
 > - DELETE dùng để xóa resource (DeleteRoom, CancelBooking)
+> - Các thao tác điều phối trạng thái nghiệp vụ (giữ slot, giải phóng slot) dùng action endpoint rõ nghĩa để tránh mơ hồ ngữ nghĩa.
 
 ### 2.7 Utility Service & Microservice Candidates
 
@@ -218,15 +224,28 @@ Based on Non-Functional Requirements (1.3) and Processing Requirements, identify
 
 | Candidate | Loại | Lý do (liên kết tới NFR hoặc yêu cầu xử lý) |
 |-----------|------|------|
-| notification-service | Utility | NFR Security: Tất cả services đều cần gửi thông báo cho sinh viên (xác nhận, hủy phòng, lời nhắc). Tách riêng để dễ quản lý và mở rộng |
-| auth-service | Utility | NFR Security: Cần xác thực JWT token cho tất cả requests đến các services. Tách riêng giảm code trùng lặp |
+| auth-service | Utility | NFR Security: Xác thực JWT token tập trung tại Gateway, giảm lặp logic auth trong các domain service |
+| notification-service | Utility | NFR Availability: Tách gửi thông báo khỏi luồng đồng bộ đặt phòng để không làm chậm phản hồi người dùng |
 | schedule-service | Microservice | NFR Scalability + Performance: Yêu cầu CheckAvailability xử lý ~100 req/s vào giờ cao điểm. Để độc lập tránh ảnh hưởng từ room-service hoặc booking-service |
 | room-service | Microservice | NFR Availability: Nếu room-service bị lỗi, booking-service vẫn có thể xem các booking cũ (cache thông tin phòng). Database riêng cho độc lập |
 
 > **Giải thích:**
-> - **notification-service**: Đa service gọi (room-service, booking-service, schedule-service) → tiện tách riêng
-> - **auth-service**: API Gateway có thể dùng để xác thực tập trung
-> - **schedule-service & room-service**: Tách riêng database vì yêu cầu khác nhau về scale và availability
+> - **auth-service**: xử lý tập trung concern dùng chung (cross-cutting concern)
+> - **notification-service**: nên xử lý bất đồng bộ qua message/event để tăng loose coupling
+> - **schedule-service & room-service**: tách riêng để bảo đảm autonomy và khả năng scale độc lập
+
+### 2.9 SOA Principles Compliance
+
+| Nguyên lý SOA | Áp dụng trong thiết kế |
+|---------------|-------------------------|
+| Standardized Service Contract | Mỗi service có endpoint rõ ràng, schema request/response thống nhất, có `GET /health` |
+| Service Loose Coupling | booking-service chỉ gọi contract của room/schedule, không truy cập DB chéo |
+| Service Abstraction | Client không biết logic nội bộ kiểm tra slot hay lưu booking |
+| Service Reusability | room-service và schedule-service có thể tái sử dụng cho use case khác (mượn phòng họp, thi online...) |
+| Service Autonomy | Mỗi service quản lý dữ liệu và vòng đời triển khai riêng |
+| Service Statelessness | Request chứa đủ ngữ cảnh xử lý; trạng thái nghiệp vụ lưu ở DB |
+| Service Discoverability | API được mô tả trong OpenAPI, endpoint đặt tên theo resource rõ nghĩa |
+| Service Composability | booking-service compose room-service + schedule-service để hoàn tất quy trình đặt phòng |
 
 ### 2.8 Service Composition Candidates
 
@@ -274,8 +293,7 @@ sequenceDiagram
 
 Service Contract specification for each service. Full OpenAPI specs:
 - [`docs/api-specs/service-a.yaml`](api-specs/service-a.yaml) — room-service
-- [`docs/api-specs/service-b.yaml`](api-specs/service-b.yaml) — booking-service
-- [`docs/api-specs/service-c.yaml`](api-specs/service-c.yaml) — schedule-service (nếu tách riêng) hoặc tích hợp vào service-b
+- [`docs/api-specs/service-b.yaml`](api-specs/service-b.yaml) — schedule-service + booking-service (tách theo tag)
 
 > 💡 **Derive from 2.6:** Each row in the capability table (2.6) maps directly to one API endpoint here. The Service Candidate column tells you which service owns it.
 
@@ -311,6 +329,8 @@ Service Contract specification for each service. Full OpenAPI specs:
 | /schedules/{id} | PUT | Cập nhật trạng thái slot | `{available?, bookedBy?, status?}` | `{id, ...}` |
 | /schedules/{id} | DELETE | Xóa slot | ❌ | `{message: "deleted"}` |
 | /schedules/check-availability | POST | Kiểm tra slot có khả dụng | `{roomId, startTime, endTime}` | `{available: true/false, slotId?, conflictBooking?}` |
+| /schedules/{id}/reserve | POST | Giữ slot tạm thời cho giao dịch đặt phòng | `{bookingRef, ttlSeconds}` | `{slotId, status: "reserved", expiresAt}` |
+| /schedules/{id}/release | POST | Giải phóng slot khi hủy/thất bại giao dịch | `{bookingRef}` | `{slotId, status: "available"}` |
 | /rooms/{roomId}/schedules | GET | Lấy tất cả slot của một phòng | ❌ | `{schedules: [{id, startTime, endTime, available}]}` |
 | /health | GET | Health check | ❌ | `{status: "ok"}` |
 
@@ -381,6 +401,19 @@ flowchart TD
     F -->|No conflict| G["Return 200: available=true"]
     F -->|Has conflict| H["Get conflicting booking info"]
     H --> I["Return 200: available=false + conflictBooking"]
+```
+
+**Service C — schedule-service (POST /schedules/{id}/reserve - Giữ slot):**
+
+```mermaid
+flowchart TD
+    A["Receive POST /schedules/{id}/reserve"] --> B["Extract slotId, bookingRef, ttl"]
+    B --> C{"Validate input?"}
+    C -->|Invalid| D["Return 400 Bad Request"]
+    C -->|Valid| E{"Slot exists and available?"}
+    E -->|No| F["Return 409 Conflict"]
+    E -->|Yes| G["Mark slot=reserved + set expiresAt"]
+    G --> H["Return 200 OK + reservation info"]
 ```
 
 **Service C — schedule-service (PUT /schedules/{id} - Cập nhật slot):**
