@@ -1,229 +1,401 @@
-# Microservices System - Analysis and Design
+# Analysis and Design — Step-by-Step Action Approach
 
-This document describes service-oriented analysis and design for the **Food Ordering System**.
+> **Goal**: Analyze a specific business process and design a service-oriented automation solution (SOA/Microservices).
+> **Scope**: 4–6 week assignment — focus on **one business process**, not an entire system.
+>
+> **Alternative to**: [`analysis-and-design-ddd.md`](analysis-and-design-ddd.md) (Domain-Driven Design approach).
+> Choose **one** approach, not both. Use this if your team prefers discovering service boundaries through **decomposing concrete actions** rather than domain modeling.
 
 **References:**
-1. Service-Oriented Architecture: Analysis and Design for Services and Microservices - Thomas Erl (2nd Edition)
-2. Microservices Patterns - Chris Richardson
-3. Assignment handout - Service-Oriented Software Development
+1. *Service-Oriented Architecture: Analysis and Design for Services and Microservices* — Thomas Erl (2nd Edition)
+2. *Microservices Patterns: With Examples in Java* — Chris Richardson
+3. *Bài tập — Phát triển phần mềm hướng dịch vụ* — Hung Dang (available in Vietnamese)
 
 ---
 
-## 1. Problem Statement
+### How Step-by-Step Action differs from DDD
 
-- Domain: Food ordering and delivery.
-- Problem:
-  - Customers need a simple way to browse restaurants, order food, pay, and track delivery.
-  - Restaurants need a manageable workflow for menu and order confirmation.
-  - Delivery flow needs clear status updates for customers.
-- Users/Actors:
-  - Customer
-  - Restaurant staff/owner
-  - Delivery staff
-  - System admin (optional for MVP)
-- Scope:
-  - In scope (MVP): menu browsing, order creation, payment status, delivery status, order tracking.
-  - Out of scope: promotions engine, real online payment gateway integration, recommendation system.
-
----
-
-## 2. Service-Oriented Analysis
-
-### 2.1 Business Process Decomposition
-
-| Step | Activity | Actor | Description |
-|---|---|---|---|
-| 1 | Browse restaurants and menus | Customer | Customer views available restaurants and menu items. |
-| 2 | Create order | Customer | Customer selects items and submits order request. |
-| 3 | Validate order | System | Order service validates item availability and prices. |
-| 4 | Process payment | Customer/System | Payment service creates payment and returns payment result. |
-| 5 | Confirm order | Restaurant | Restaurant confirms or rejects order. |
-| 6 | Create delivery task | System | Delivery service creates delivery request for confirmed order. |
-| 7 | Update delivery status | Delivery staff/System | Delivery status moves from assigned to delivered. |
-| 8 | Complete order | System | Order marked completed after delivery success. |
-
-### 2.2 Entity Identification
-
-| Entity | Key Attributes | Owned By |
+| | Step-by-Step Action (this document) | DDD |
 |---|---|---|
-| Customer | id, full_name, phone, email, default_address | customer-service |
-| Address | id, customer_id, line1, ward, district, city | customer-service |
-| Restaurant | id, name, phone, open_status, rating | restaurant-service |
-| MenuItem | id, restaurant_id, name, price, availability, category | menu-service |
-| Order | id, customer_id, restaurant_id, total_amount, status, created_at | order-service |
-| OrderItem | id, order_id, menu_item_id, quantity, unit_price, subtotal | order-service |
-| Payment | id, order_id, method, amount, status, transaction_ref | payment-service |
-| Delivery | id, order_id, shipper_name, phone, status, eta | delivery-service |
+| **Thinking direction** | Bottom-up: actions → group → service | Dual: top-down framing + bottom-up Event Storming |
+| **Service boundary decided by** | Similarity of actions/functions | Semantic boundary of business domain |
+| **Best suited for** | Small–medium systems, clearer technical scope | Complex business logic, multiple subdomains |
+| **Key risk** | Services may be fragmented by technical logic | Requires deep domain understanding upfront |
 
-### 2.3 Service Candidate Identification
+Both approaches lead to a list of services with clear responsibilities. This approach is more structured and mechanical — useful when your team understands *what the system does* better than *what the business domain is*.
 
-Service candidates by business capability and bounded context:
+### Progression Overview
 
-- customer-service: customer profile and address management.
-- restaurant-service: restaurant info and operating status.
-- menu-service: menu data and item availability.
-- order-service: order lifecycle and order items.
-- payment-service: payment creation and status management.
-- delivery-service: delivery assignment and tracking.
-- api-gateway: single entry point for frontend clients.
+| Step | What you do | Output |
+|------|------------|--------|
+| **1.1** | Define the Business Process | Process diagram, actors, scope |
+| **1.2** | Survey existing systems | System inventory |
+| **1.3** | State non-functional requirements | NFR table |
+| **2.1–2.2** | Decompose process & filter unsuitable actions | Filtered action list |
+| **2.3** | Group reusable actions → Entity Service Candidates | Entity service table |
+| **2.4** | Group process-specific actions → Task Service Candidate | Task service table |
+| **2.5** | Map entities to REST Resources | Resource URI table |
+| **2.6** | Associate capabilities with resources and HTTP methods | **Service capabilities → API endpoints** |
+| **2.7** | Identify cross-cutting / high-autonomy candidates | Utility / Microservice Candidates |
+| **2.8** | Show how services collaborate | Service composition diagram |
+| **3.1** | Specify service contracts | OpenAPI endpoint tables |
+| **3.2** | Design internal service logic | Flowchart per service |
 
 ---
 
-## 3. Service-Oriented Design
+## Part 1 — Analysis Preparation
 
-### 3.1 Service Inventory
+### 1.1 Business Process Definition
 
-| Service | Responsibility | Type |
-|---|---|---|
-| customer-service | Manage customer profile and addresses | Entity service |
-| restaurant-service | Manage restaurant profile and availability | Entity service |
-| menu-service | Manage menu catalog and item states | Entity service |
-| order-service | Orchestrate order lifecycle | Task service |
-| payment-service | Handle payment records and status transitions | Task service |
-| delivery-service | Handle delivery tasks and tracking | Task service |
-| api-gateway | Routing, auth, and API entry point | Utility service |
+Describe the **one** business process your team will automate. Keep scope realistic for 4–6 weeks.
 
-### 3.2 Service Capabilities (Interface Draft)
+- **Domain**: Hệ thống quản lý phòng học và đặt phòng tại trường đại học
+- **Business Process**: "Sinh viên đặt phòng học cho các hoạt động nhóm hoặc học tập"
+- **Actors**: 
+  - Sinh viên (Student)
+  - Người quản lý phòng học (Room Manager)
+  - Hệ thống lịch trình (Scheduler)
+- **Scope**: Từ khi sinh viên muốn đặt phòng → lựa chọn phòng khả dụng → xác nhận đặt phòng. Không bao gồm: thanh toán, tính phí sử dụng.
 
-**customer-service**
+**Process Diagram:**
 
-| Capability | Method | Endpoint | Input | Output |
-|---|---|---|---|---|
-| Get profile | GET | `/customers/{id}` | path id | Customer |
-| Create address | POST | `/customers/{id}/addresses` | AddressCreate | Address |
+```
+[Sinh viên] → [Xem danh sách phòng] → [Chọn phòng & thời gian] → [Kiểm tra khả dụng] → [Xác nhận đặt phòng] → [Lưu thông tin đặt phòng]
+```
 
-**restaurant-service**
+> **Quy trình chi tiết:**
+> 1. Sinh viên đăng nhập vào hệ thống
+> 2. Xem danh sách phòng học khả dụng
+> 3. Chọn phòng và khung thời gian muốn đặt
+> 4. Hệ thống kiểm tra xem slot đó có trống không
+> 5. Nếu trống → tạo đơn đặt phòng → ghi nhận thông tin
+> 6. Gửi xác nhận cho sinh viên
 
-| Capability | Method | Endpoint | Input | Output |
-|---|---|---|---|---|
-| List restaurants | GET | `/restaurants` | query filters | Restaurant[] |
-| Update open status | PATCH | `/restaurants/{id}/status` | status | Restaurant |
+### 1.2 Existing Automation Systems
 
-**menu-service**
+List existing systems, databases, or legacy logic related to this process.
 
-| Capability | Method | Endpoint | Input | Output |
-|---|---|---|---|---|
-| List menu by restaurant | GET | `/restaurants/{id}/menu-items` | path id | MenuItem[] |
-| Validate menu items | POST | `/menu-items/validate` | items[] | validation result |
+| Hệ thống | Loại | Vai trò hiện tại | Phương thức tương tác |
+|---------|------|-----------------|---------------------|
+| Google Sheets (Danh sách phòng) | Spreadsheet | Quản lý phòng học thủ công | Truy cập trực tiếp |
+| Email | Manual | Ghi nhận yêu cầu đặt phòng | Gửi email xác nhận |
 
-**order-service**
+> Hiện tại, hệ thống đặt phòng được thực hiện **bán tự động**: danh sách phòng lưu trữ trên Google Sheets, sinh viên gửi email hoặc ghi danh sách yêu cầu, người quản lý kiểm tra thủ công xem slot có trống không rồi gửi xác nhận.
 
-| Capability | Method | Endpoint | Input | Output |
-|---|---|---|---|---|
-| Create order | POST | `/orders` | OrderCreate | Order |
-| Get order detail | GET | `/orders/{id}` | path id | OrderDetail |
-| Update order status | PATCH | `/orders/{id}/status` | status | Order |
+### 1.3 Non-Functional Requirements
 
-**payment-service**
+Non-functional requirements serve as input in two places:
+- **2.7** — justifying Utility Service and Microservice Candidates
+- **`docs/architecture.md` Section 1** — justifying architectural pattern choices (e.g., high availability → Circuit Breaker, scalability → Database per Service)
 
-| Capability | Method | Endpoint | Input | Output |
-|---|---|---|---|---|
-| Create payment | POST | `/payments` | PaymentCreate | Payment |
-| Confirm payment | PATCH | `/payments/{id}/confirm` | confirm payload | Payment |
+| Yêu cầu | Mô tả |
+|--------|--------|
+| **Performance** | Phản hồi tìm kiếm danh sách phòng khả dụng phải < 2 giây. Xác nhận đặt phòng phải < 1 giây. Xử lý được ≥ 100 yêu cầu/giây |
+| **Security** | Sinh viên chỉ xem được thông tin phòng công khai. Chỉ người quản lý mới có quyền tạo/sửa/xóa thông tin phòng. Xác thực qua JWT token |
+| **Scalability** | Hệ thống phải chịu được ≥ 1000 sinh viên truy cập đồng thời vào khoảng 13:00 (giờ cao điểm). Schedule Service phải có thể xử lý được nhiều slot cùng lúc |
+| **Availability** | Uptime ≥ 99%. Nếu một service bị lỗi, các service khác vẫn hoạt động được (ví dụ: Room Service lỗi thì vẫn có thể xem Booking cũ) |
 
-**delivery-service**
+---
 
-| Capability | Method | Endpoint | Input | Output |
-|---|---|---|---|---|
-| Create delivery | POST | `/deliveries` | DeliveryCreate | Delivery |
-| Update delivery status | PATCH | `/deliveries/{id}/status` | status | Delivery |
+## Part 2 — REST/Microservices Modeling
 
-### 3.3 Service Interactions
+### 2.1 Decompose Business Process & 2.2 Filter Unsuitable Actions
+
+Decompose the process from 1.1 into granular actions. Mark actions unsuitable for service encapsulation.
+
+> 💡 **How to do it:** Walk through your process diagram step by step. For each step, write one or more actions the system needs to perform. Then ask: *"Can this action be encapsulated as a reusable service call?"* If it requires irreducible human judgment or is a one-time manual task, mark it ❌.
+
+| # | Hành động | Actor | Mô tả | Phù hợp? |
+|---|----------|-------|------|----------|
+| 1 | ListRooms | Sinh viên | Lấy danh sách các phòng học trong hệ thống | ✅ |
+| 2 | GetRoomDetails | Sinh viên | Xem chi tiết phòng (sức chứa, thiết bị, vị trí) | ✅ |
+| 3 | CheckAvailability | Hệ thống | Kiểm tra slot thời gian có khả dụng hay không | ✅ |
+| 4 | CreateBooking | Sinh viên | Tạo đơn đặt phòng mới | ✅ |
+| 5 | GetBooking | Sinh viên | Xem chi tiết đơn đặt phòng đã tạo | ✅ |
+| 6 | CancelBooking | Sinh viên | Hủy đơn đặt phòng | ✅ |
+| 7 | UpdateRoom | Người quản lý | Cập nhật thông tin phòng (số chỗ, thiết bị) | ✅ |
+| 8 | DeleteRoom | Người quản lý | Xóa phòng khỏi hệ thống | ✅ |
+| 9 | CreateScheduleSlot | Người quản lý | Tạo slot thời gian mở cho đặt phòng | ✅ |
+| 10 | ApproveBooking | Người quản lý | Người quản lý phòng quyết định có chấp nhận hay không | ❌ |
+| 11 | SendNotification | Hệ thống | Gửi email/SMS xác nhận tới sinh viên | ✅ |
+| 12 | UpdateScheduleSlot | Người quản lý | Cập nhật trạng thái slot (mở/đóng) | ✅ |
+
+> **Lý do từ chối:**
+> - #10 (ApproveBooking): Yêu cầu quyết định của con người. Trong phạm vi bài tập này, ta sẽ auto-accept nếu slot trống.
+
+### 2.3 Entity Service Candidates
+
+Identify business entities and group reusable (agnostic) actions into Entity Service Candidates.
+
+> 💡 **How to do it:** Look at the ✅ actions from 2.1–2.2. Ask: *"Which business entity does this action primarily read or modify?"* Actions that operate on the same entity are grouped together. Each group becomes an **Entity Service Candidate**.
+>
+> An action is **agnostic** (entity-level) if it is potentially reusable across multiple business processes — e.g., "GetCustomer" could be called from order, support, and billing processes.
+
+| Đối tượng | Service Candidate | Hành động Agnostic |
+|-----------|-------------------|-------------------|
+| Phòng học (Room) | room-service | ListRooms, GetRoomDetails, UpdateRoom, DeleteRoom |
+| Lịch trình/Slot (Schedule) | schedule-service | CreateScheduleSlot, UpdateScheduleSlot, CheckAvailability |
+| Đặt phòng (Booking) | booking-service | CreateBooking, GetBooking, CancelBooking |
+
+> **Giải thích:**
+> - **room-service**: Quản lý thông tin cơ bản về các phòng (tên, sức chứa, thiết bị, vị trí). Được tái sử dụng bởi bất kỳ service nào cần thông tin phòng.
+> - **schedule-service**: Quản lý các slot thời gian sẵn dùng cho từng phòng. CheckAvailability là hành động tái sử dụng giúp kiểm tra slot.
+> - **booking-service**: Lưu trữ các đơn đặt phòng của sinh viên. Là task service chính nhưng cũng có hành động agnostic để query booking.
+
+### 2.4 Task Service Candidate
+
+Group process-specific (non-agnostic) actions into a Task Service Candidate.
+
+> 💡 **How to do it:** From the ✅ actions in 2.1–2.2, find the ones that are **specific to this business process** and orchestrate multiple entities — they are not reusable on their own. These belong in a Task Service, which acts as the process orchestrator.
+
+| Hành động Đặc Thù | Task Service Candidate |
+|------------------|------------------------|
+| Đặt phòng (CreateBooking) — gọi schedule-service kiểm tra khả dụng → lưu vào booking | booking-service (Orchestrator) |
+| Gửi thông báo xác nhận | notification-service (Utility) |
+
+> **Giải thích:**
+> - booking-service vừa là Entity Service (lưu đơn đặt phòng) vừa là Task Service (điều phối quy trình đặt phòng).
+> - Khi sinh viên CreateBooking:
+>   1. booking-service nhận yêu cầu
+>   2. Gọi schedule-service → CheckAvailability (slot có trống?)
+>   3. Nếu trống → lưu Booking + cập nhật Schedule slot
+>   4. Gọi notification-service gửi email xác nhận
+
+### 2.5 Identify Resources
+
+Map entities/processes to REST URI Resources.
+
+> 💡 **How to do it:** For each Entity Service from 2.3, define the primary REST resource URI. Resources are plural nouns, not verbs. The URI represents a collection or a single item in that collection.
+
+| Đối tượng / Quy trình | Resource URI |
+|------|--------------|
+| Phòng học | /rooms, /rooms/{id} |
+| Lịch trình / Slot | /schedules, /schedules/{id}, /rooms/{id}/schedules |
+| Đặt phòng | /bookings, /bookings/{id}, /users/{userId}/bookings |
+
+> **Chi tiết:**
+> - `/rooms`: Danh sách tất cả phòng
+> - `/rooms/{id}`: Chi tiết một phòng cụ thể
+> - `/schedules`: Danh sách tất cả slot
+> - `/rooms/{id}/schedules`: Danh sách slot của một phòng cụ thể
+> - `/bookings`: Danh sách tất cả đặt phòng
+> - `/bookings/{id}`: Chi tiết một đơn đặt phòng
+> - `/users/{userId}/bookings`: Danh sách đơn đặt phòng của một sinh viên
+
+### 2.6 Associate Capabilities with Resources and Methods
+
+> 💡 **How to do it:** For each service capability (action from 2.3–2.4), map it to a resource URI from 2.5 and the appropriate HTTP method. This table directly produces your API endpoint list for Part 3.
+
+| Service Candidate | Hành động | Resource | HTTP Method |
+|-------------------|----------|----------|-------------|
+| room-service | ListRooms | /rooms | GET |
+| room-service | GetRoomDetails | /rooms/{id} | GET |
+| room-service | UpdateRoom | /rooms/{id} | PUT |
+| room-service | DeleteRoom | /rooms/{id} | DELETE |
+| schedule-service | CreateScheduleSlot | /schedules | POST |
+| schedule-service | UpdateScheduleSlot | /schedules/{id} | PUT |
+| schedule-service | CheckAvailability | /schedules/check-availability | POST |
+| schedule-service | GetSchedulesByRoom | /rooms/{roomId}/schedules | GET |
+| booking-service | CreateBooking | /bookings | POST |
+| booking-service | GetBooking | /bookings/{id} | GET |
+| booking-service | CancelBooking | /bookings/{id} | DELETE |
+| booking-service | ListUserBookings | /users/{userId}/bookings | GET |
+| notification-service | SendNotification | /notifications/send | POST |
+
+> **Ràng buộc:**
+> - POST dùng để tạo resource mới (CreateBooking, CreateScheduleSlot)
+> - GET dùng để truy vấn dữ liệu (ListRooms, GetBooking)
+> - PUT dùng để cập nhật resource hiện tại (UpdateRoom, UpdateScheduleSlot)
+> - DELETE dùng để xóa resource (DeleteRoom, CancelBooking)
+
+### 2.7 Utility Service & Microservice Candidates
+
+Based on Non-Functional Requirements (1.3) and Processing Requirements, identify cross-cutting utility logic or logic requiring high autonomy/performance.
+
+> 💡 **How to do it:** Look at your NFRs from 1.3. Ask:
+> - *"Is there a concern (e.g., authentication, logging, notifications) that appears across multiple services?"* → **Utility Service**
+> - *"Is there a capability that must scale independently or tolerate failure in isolation?"* → **Microservice Candidate** (extract from Entity/Task service)
+
+| Candidate | Loại | Lý do (liên kết tới NFR hoặc yêu cầu xử lý) |
+|-----------|------|------|
+| notification-service | Utility | NFR Security: Tất cả services đều cần gửi thông báo cho sinh viên (xác nhận, hủy phòng, lời nhắc). Tách riêng để dễ quản lý và mở rộng |
+| auth-service | Utility | NFR Security: Cần xác thực JWT token cho tất cả requests đến các services. Tách riêng giảm code trùng lặp |
+| schedule-service | Microservice | NFR Scalability + Performance: Yêu cầu CheckAvailability xử lý ~100 req/s vào giờ cao điểm. Để độc lập tránh ảnh hưởng từ room-service hoặc booking-service |
+| room-service | Microservice | NFR Availability: Nếu room-service bị lỗi, booking-service vẫn có thể xem các booking cũ (cache thông tin phòng). Database riêng cho độc lập |
+
+> **Giải thích:**
+> - **notification-service**: Đa service gọi (room-service, booking-service, schedule-service) → tiện tách riêng
+> - **auth-service**: API Gateway có thể dùng để xác thực tập trung
+> - **schedule-service & room-service**: Tách riêng database vì yêu cầu khác nhau về scale và availability
+
+### 2.8 Service Composition Candidates
+
+Interaction diagram showing how Service Candidates collaborate to fulfill the business process.
+
+> 💡 **How to do it:** Walk through the business process from 1.1 again. For each step, identify which service handles it and what inter-service calls are made. The Task Service (2.4) is typically the orchestrator in the center of the diagram.
+
+**Quy trình chính: Sinh viên đặt phòng**
 
 ```mermaid
 sequenceDiagram
-    participant C as Customer
-    participant GW as API Gateway
-    participant OS as order-service
-    participant MS as menu-service
-    participant PS as payment-service
-    participant DS as delivery-service
+    participant Client as Sinh viên
+    participant Gateway as API Gateway
+    participant BookingService as booking-service
+    participant ScheduleService as schedule-service
+    participant RoomService as room-service
+    participant NotificationService as notification-service
 
-    C->>GW: POST /orders
-    GW->>OS: create order
-    OS->>MS: validate items/prices
-    MS-->>OS: validation result
-    OS->>PS: create payment
-    PS-->>OS: payment status
-    OS->>DS: create delivery
-    DS-->>OS: delivery created
-    OS-->>GW: order response
-    GW-->>C: 201 Created
+    Client->>Gateway: POST /bookings (roomId, timeStart, timeEnd)
+    Gateway->>BookingService: Forward request + auth token
+    BookingService->>ScheduleService: POST /schedules/check-availability
+    ScheduleService-->>BookingService: {available: true}
+    BookingService->>RoomService: GET /rooms/{roomId}
+    RoomService-->>BookingService: {roomId, name, capacity}
+    BookingService->>BookingService: Save booking to DB
+    BookingService->>ScheduleService: PUT /schedules/{slotId} (mark as booked)
+    BookingService->>NotificationService: POST /notifications/send (bookingId)
+    NotificationService-->>BookingService: {status: sent}
+    BookingService-->>Gateway: {bookingId, status: "confirmed"}
+    Gateway-->>Client: 201 Created
 ```
 
-### 3.4 Data Ownership and Boundaries
-
-| Data Entity | Owner Service | Access Pattern |
-|---|---|---|
-| Customer, Address | customer-service | CRUD via REST |
-| Restaurant | restaurant-service | CRUD via REST |
-| MenuItem | menu-service | CRUD + validation API |
-| Order, OrderItem | order-service | CRUD + orchestration |
-| Payment | payment-service | Create/update status via REST |
-| Delivery | delivery-service | Create/update status via REST |
+> **Các quy trình khác:**
+> 1. **Xem danh sách phòng**: Client → room-service (GET /rooms)
+> 2. **Hủy đặt phòng**: Client → booking-service → schedule-service → notification-service
+> 3. **Cập nhật phòng**: Quản lý → room-service (PUT /rooms/{id})
 
 ---
 
-## 4. API Specifications
+## Part 3 — Service-Oriented Design
 
-Planned API specs:
+> Part 3 is the **convergence point** — regardless of whether you used Step-by-Step Action or DDD in Part 2, the outputs here are the same: service contracts and service logic.
 
-- `docs/api-specs/customer-service.yaml`
-- `docs/api-specs/restaurant-service.yaml`
-- `docs/api-specs/menu-service.yaml`
-- `docs/api-specs/order-service.yaml`
-- `docs/api-specs/payment-service.yaml`
-- `docs/api-specs/delivery-service.yaml`
+### 3.1 Uniform Contract Design
 
-(Current template files `service-a.yaml` and `service-b.yaml` will be replaced in Phase 2.)
+Service Contract specification for each service. Full OpenAPI specs:
+- [`docs/api-specs/service-a.yaml`](api-specs/service-a.yaml) — room-service
+- [`docs/api-specs/service-b.yaml`](api-specs/service-b.yaml) — booking-service
+- [`docs/api-specs/service-c.yaml`](api-specs/service-c.yaml) — schedule-service (nếu tách riêng) hoặc tích hợp vào service-b
 
----
+> 💡 **Derive from 2.6:** Each row in the capability table (2.6) maps directly to one API endpoint here. The Service Candidate column tells you which service owns it.
 
-## 5. Data Model (Logical)
+**Service A — room-service (Quản lý thông tin phòng):**
 
-### customer-service
+| Endpoint | Phương thức | Mô tả | Request Body | Response (200/201) |
+|----------|-----------|--------|--------------|-------------------|
+| /rooms | GET | Lấy danh sách tất cả phòng | ❌ | `{rooms: [{id, name, capacity, location, ...}]}` |
+| /rooms | POST | Tạo phòng mới (quản lý) | `{name, capacity, location, equipment}` | `{id, name, capacity, ...}` |
+| /rooms/{id} | GET | Lấy chi tiết phòng | ❌ | `{id, name, capacity, location, equipment}` |
+| /rooms/{id} | PUT | Cập nhật phòng | `{name?, capacity?, location?, equipment?}` | `{id, name, ...}` |
+| /rooms/{id} | DELETE | Xóa phòng | ❌ | `{message: "deleted"}` |
+| /health | GET | Health check | ❌ | `{status: "ok"}` |
 
-- Customer(id, full_name, email, phone, created_at)
-- Address(id, customer_id, line1, ward, district, city, is_default)
+**Service B — booking-service (Quản lý đặt phòng):**
 
-### restaurant-service
+| Endpoint | Phương thức | Mô tả | Request Body | Response (200/201) |
+|----------|-----------|--------|--------------|-------------------|
+| /bookings | GET | Lấy danh sách booking (filter by user) | ❌ | `{bookings: [{id, roomId, userId, startTime, ...}]}` |
+| /bookings | POST | Tạo đơn đặt phòng mới | `{roomId, userId, startTime, endTime}` | `{id, status: "confirmed", bookingId, ...}` |
+| /bookings/{id} | GET | Lấy chi tiết booking | ❌ | `{id, roomId, userId, startTime, endTime, status}` |
+| /bookings/{id} | DELETE | Hủy booking | ❌ | `{message: "cancelled"}` |
+| /users/{userId}/bookings | GET | Lấy danh sách booking của sinh viên | ❌ | `{bookings: [{...}]}` |
+| /health | GET | Health check | ❌ | `{status: "ok"}` |
 
-- Restaurant(id, name, phone, open_status, created_at)
+**Service C — schedule-service (Quản lý lịch trình & kiểm tra khả dụng):**
 
-### menu-service
+| Endpoint | Phương thức | Mô tả | Request Body | Response (200/201) |
+|----------|-----------|--------|--------------|-------------------|
+| /schedules | GET | Lấy danh sách tất cả slot | ❌ | `{schedules: [{id, roomId, startTime, endTime, available}]}` |
+| /schedules | POST | Tạo slot thời gian mới | `{roomId, startTime, endTime}` | `{id, roomId, startTime, endTime, available: true}` |
+| /schedules/{id} | GET | Lấy chi tiết slot | ❌ | `{id, roomId, startTime, endTime, available, bookedBy}` |
+| /schedules/{id} | PUT | Cập nhật trạng thái slot | `{available?, bookedBy?, status?}` | `{id, ...}` |
+| /schedules/{id} | DELETE | Xóa slot | ❌ | `{message: "deleted"}` |
+| /schedules/check-availability | POST | Kiểm tra slot có khả dụng | `{roomId, startTime, endTime}` | `{available: true/false, slotId?, conflictBooking?}` |
+| /rooms/{roomId}/schedules | GET | Lấy tất cả slot của một phòng | ❌ | `{schedules: [{id, startTime, endTime, available}]}` |
+| /health | GET | Health check | ❌ | `{status: "ok"}` |
 
-- MenuItem(id, restaurant_id, name, category, price, availability, updated_at)
+> 💡 **Tiếp theo:** Update file OpenAPI YAML tương ứng (`service-a.yaml`, `service-b.yaml`, `service-c.yaml` hoặc tích hợp schedule endpoints vào `service-b.yaml`) để khớp với các table này.
 
-### order-service
+### 3.2 Service Logic Design
 
-- Order(id, customer_id, restaurant_id, total_amount, status, payment_status, delivery_status, created_at)
-- OrderItem(id, order_id, menu_item_id, item_name, unit_price, quantity, subtotal)
+Internal processing flow for each service.
 
-### payment-service
+> 💡 **How to do it:** For each service, pick its most important endpoint and draw the internal logic. Focus on: input validation → business rule checks → persistence/external calls → response.
 
-- Payment(id, order_id, method, amount, status, transaction_ref, paid_at)
+**Service A — room-service (GET /rooms/{id}):**
 
-### delivery-service
+```mermaid
+flowchart TD
+    A["Receive GET /rooms/{id}"] --> B["Extract roomId from URL"]
+    B --> C{"roomId valid?"}
+    C -->|Invalid| D["Return 400 Bad Request"]
+    C -->|Valid| E["Query database"]
+    E --> F{"Room exists?"}
+    F -->|Not found| G["Return 404 Not Found"]
+    F -->|Found| H["Return 200 OK + room JSON"]
+```
 
-- Delivery(id, order_id, shipper_name, shipper_phone, status, eta, delivered_at)
+**Service B — booking-service (POST /bookings - Đặt phòng):**
 
----
+```mermaid
+flowchart TD
+    A["Receive POST /bookings"] --> B["Extract roomId, userId, startTime, endTime"]
+    B --> C{"Validate input?"}
+    C -->|Invalid| D["Return 400 Bad Request"]
+    C -->|Valid| E["Call schedule-service: CheckAvailability"]
+    E --> F{"Slot available?"}
+    F -->|Not available| G["Return 409 Conflict"]
+    F -->|Available| H["Call room-service: GET /rooms/roomId"]
+    H --> I{"Room exists?"}
+    I -->|Not found| J["Return 404 Not Found"]
+    I -->|Found| K["Create Booking in DB"]
+    K --> L["Call schedule-service: Mark slot as booked"]
+    L --> M["Call notification-service: SendConfirmation"]
+    M --> N["Return 201 Created + bookingId"]
+```
 
-## 6. Non-Functional Requirements
+**Service B — booking-service (DELETE /bookings/{id} - Hủy phòng):**
 
-| Requirement | Description |
-|---|---|
-| Performance | Average API response < 300ms for read APIs under normal load |
-| Scalability | Scale `menu-service` and `order-service` independently |
-| Availability | Core ordering flow remains available even if non-core service is degraded |
-| Security | JWT at gateway, input validation, role-based access for restaurant actions |
-| Observability | Structured logs and request IDs across gateway and services |
-| Maintainability | Separate repo modules/folders and database per service |
+```mermaid
+flowchart TD
+    A["Receive DELETE /bookings/{id}"] --> B["Extract bookingId"]
+    B --> C{"Booking exists?"}
+    C -->|Not found| D["Return 404 Not Found"]
+    C -->|Found| E{"Booking not already cancelled?"}
+    E -->|Already cancelled| F["Return 409 Conflict"]
+    E -->|Valid| G["Update booking status to cancelled"]
+    G --> H["Call schedule-service: Mark slot as available"]
+    H --> I["Call notification-service: SendCancellation"]
+    I --> J["Return 200 OK"]
+```
 
----
+**Service C — schedule-service (POST /schedules/check-availability - Kiểm tra khả dụng):**
 
-## 7. Team Split (3 Members)
+```mermaid
+flowchart TD
+    A["Receive POST /schedules/check-availability"] --> B["Extract roomId, startTime, endTime"]
+    B --> C{"Validate input (date, room)?"}
+    C -->|Invalid| D["Return 400 Bad Request"]
+    C -->|Valid| E["Query DB: slots for roomId between startTime-endTime"]
+    E --> F{"Any slot exists & available=true?"}
+    F -->|No conflict| G["Return 200: available=true"]
+    F -->|Has conflict| H["Get conflicting booking info"]
+    H --> I["Return 200: available=false + conflictBooking"]
+```
 
-- Member 1: `customer-service` + `order-service` analysis and API draft.
-- Member 2: `restaurant-service` + `menu-service` analysis and API draft.
-- Member 3: `payment-service` + `delivery-service` + gateway integration flow and failure handling design.
+**Service C — schedule-service (PUT /schedules/{id} - Cập nhật slot):**
+
+```mermaid
+flowchart TD
+    A["Receive PUT /schedules/{id}"] --> B["Extract slotId, available, bookedBy?"]
+    B --> C{"slotId valid?"}
+    C -->|Invalid| D["Return 400 Bad Request"]
+    C -->|Valid| E{"Slot exists?"}
+    E -->|Not found| F["Return 404 Not Found"]
+    E -->|Found| G{"Business rule: can update?"}
+    G -->|Invalid state| H["Return 409 Conflict"]
+    G -->|Valid| I["Update slot in DB"]
+    I --> J["Return 200 OK + updated slot"]
+```
+
+> **Lưu ý:** Các service khác có logic tương tự. Chi tiết đầy đủ sẽ được định nghĩa trong code implementation.
